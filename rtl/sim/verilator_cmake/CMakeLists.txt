@@ -21,7 +21,7 @@ add_custom_target(copy-flash ALL
 
 add_dependencies(socsim copy-flash)
 
-set(GTKWAVEPATH "Y:/riscv-toolchain/gtkwave64/bin/gtkwave.exe")
+set(GTKWAVEPATH "D:/riscv-toolchain/gtkwave64/bin/gtkwave.exe")
 	
 add_custom_target(sim
 	COMMAND $<TARGET_FILE:socsim> --sim)
