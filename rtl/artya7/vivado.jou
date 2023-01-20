@@ -1,0 +1,58 @@
+#-----------------------------------------------------------
+# Vivado v2022.2 (64-bit)
+# SW Build 3671981 on Fri Oct 14 05:00:03 MDT 2022
+# IP Build 3669848 on Fri Oct 14 08:30:02 MDT 2022
+# Start of session at: Sun Nov 13 20:47:31 2022
+# Process ID: 6576
+# Current directory: D:/projects/risc-v-wb2/rtl/artya7
+# Command line: vivado.exe -gui_launcher_event rodinguilauncherevent10448 D:\projects\risc-v-wb2\rtl\artya7\risc-v-wb.xpr
+# Log file: D:/projects/risc-v-wb2/rtl/artya7/vivado.log
+# Journal file: D:/projects/risc-v-wb2/rtl/artya7\vivado.jou
+# Running On: Katharina-PC, OS: Windows, CPU Frequency: 3793 MHz, CPU Physical cores: 24, Host memory: 34308 MB
+#-----------------------------------------------------------
+start_gui
+open_project D:/projects/risc-v-wb2/rtl/artya7/risc-v-wb.xpr
+update_compile_order -fileset sources_1
+update_compile_order -fileset sim_1
+update_compile_order -fileset sim_post_synth
+export_ip_user_files -of_objects  [get_files D:/projects/risc-v-wb2/rtl/soc/wishbone/wb_master.vh] -no_script -reset -force -quiet
+export_ip_user_files -of_objects  [get_files D:/projects/risc-v-wb2/rtl/soc/peripherals/data_memory.sv] -no_script -reset -force -quiet
+export_ip_user_files -of_objects  [get_files D:/projects/risc-v-wb2/rtl/soc/peripherals/external_irq_controller.sv] -no_script -reset -force -quiet
+export_ip_user_files -of_objects  [get_files D:/projects/risc-v-wb2/rtl/soc/peripherals/leds.sv] -no_script -reset -force -quiet
+export_ip_user_files -of_objects  [get_files D:/projects/risc-v-wb2/rtl/soc/peripherals/program_memory.sv] -no_script -reset -force -quiet
+export_ip_user_files -of_objects  [get_files D:/projects/risc-v-wb2/rtl/soc/soc.sv] -no_script -reset -force -quiet
+export_ip_user_files -of_objects  [get_files D:/projects/risc-v-wb2/rtl/soc/peripherals/timer.sv] -no_script -reset -force -quiet
+export_ip_user_files -of_objects  [get_files D:/projects/risc-v-wb2/rtl/soc/wishbone/wb_bus.sv] -no_script -reset -force -quiet
+export_ip_user_files -of_objects  [get_files D:/projects/risc-v-wb2/rtl/soc/wishbone/wb_endian_adapter.sv] -no_script -reset -force -quiet
+export_ip_user_files -of_objects  [get_files D:/projects/risc-v-wb2/rtl/soc/wishbone/wb_interconnect.sv] -no_script -reset -force -quiet
+export_ip_user_files -of_objects  [get_files D:/projects/risc-v-wb2/rtl/soc/wishbone/wb_master.sv] -no_script -reset -force -quiet
+remove_files  {D:/projects/risc-v-wb2/rtl/soc/wishbone/wb_master.vh D:/projects/risc-v-wb2/rtl/soc/peripherals/data_memory.sv D:/projects/risc-v-wb2/rtl/soc/peripherals/external_irq_controller.sv D:/projects/risc-v-wb2/rtl/soc/peripherals/leds.sv D:/projects/risc-v-wb2/rtl/soc/peripherals/program_memory.sv D:/projects/risc-v-wb2/rtl/soc/soc.sv D:/projects/risc-v-wb2/rtl/soc/peripherals/timer.sv D:/projects/risc-v-wb2/rtl/soc/wishbone/wb_bus.sv D:/projects/risc-v-wb2/rtl/soc/wishbone/wb_endian_adapter.sv D:/projects/risc-v-wb2/rtl/soc/wishbone/wb_interconnect.sv D:/projects/risc-v-wb2/rtl/soc/wishbone/wb_master.sv}
+set_property dataflow_viewer_settings "min_width=16"   [current_fileset]
+launch_runs synth_1 -jobs 12
+wait_on_run synth_1
+open_run synth_1 -name synth_1
+show_objects -name pmem [get_cells -hierarchical -filter { PRIMITIVE_TYPE =~ CARRY.*.* } ]
+reset_run impl_1
+launch_runs impl_1 -jobs 12
+wait_on_run impl_1
+close_design
+open_run impl_1
+reset_run synth_1
+close_design
+launch_runs synth_1 -jobs 4
+wait_on_run synth_1
+reset_run synth_1
+launch_runs synth_1 -jobs 4
+wait_on_run synth_1
+launch_runs impl_1 -jobs 4
+wait_on_run impl_1
+open_run impl_1
+launch_runs impl_1 -to_step write_bitstream -jobs 4
+wait_on_run impl_1
+reset_run synth_1
+launch_runs synth_1 -jobs 4
+wait_on_run synth_1
+reset_run synth_1
+launch_runs impl_1 -jobs 4
+wait_on_run impl_1
+refresh_design

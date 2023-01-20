@@ -3,9 +3,12 @@ module top_verilator(
     input logic reset_i
 );
 
+logic led_out;
+
 core cpucore(
     .clk_in(clk_i),
-    .reset_in(reset_i)
+    .reset_in(reset_i),
+    .led_out(led_out)
 );
 
 logic [31:0] counter;
