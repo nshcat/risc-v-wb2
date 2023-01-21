@@ -14,11 +14,7 @@ module core(
 
     input logic wb_err,
     input logic wb_ack,
-    input logic [31:0] wb_rdata,
-    // ===
-
-    // === DEBUG STUFF ===
-    output logic led_out
+    input logic [31:0] wb_rdata
     // ===
 );
 
@@ -165,6 +161,7 @@ cpu_state_t cpu_state;
 logic [31:0] pc;
 logic [31:0] writeback_value;
 logic [31:0] load_result; // The result of the load operation, after sign extending etc
+logic bus_busy;
 
 // ==== Instruction decoding ====
 
@@ -225,8 +222,6 @@ wire [31:0] imm_CSR = { 27'h0, instruction[19:15] };
 // ==== Register file ====
 logic [31:0] registers [31:0];
 
-assign led_out = registers[5][0];
-
 // Latched copies of source register contents
 logic [31:0] rs1_data;
 logic [31:0] rs2_data;
@@ -240,7 +235,7 @@ always_comb begin
     // Stores, branches, and iret dont do writeback
     if (~(is_branch | is_store | is_iret)) begin
         // Only do write back when reading is finished
-        if (is_load & `IN_STATE(CPU_STATE_WAIT_MEM) /*& ~bus_busy*/) begin
+        if (is_load & `IN_STATE(CPU_STATE_WAIT_MEM) & ~bus_busy) begin
             do_writeback = 1'b1;
         end
 
@@ -364,7 +359,7 @@ always_comb begin
             writeback_value = pc + 32'h4;
         end
         (is_load): begin
-            writeback_value = 32'h0;//load_result;
+            writeback_value = load_result;
         end
         (is_csr): begin
             writeback_value = 32'h0;//csrs[instr_csr_addr];
@@ -425,7 +420,6 @@ logic [3:0] bus_wmask;
 logic [31:0] bus_word_addr;
 logic [31:0] bus_addr;
 wb_command_t bus_command;
-logic bus_busy;
 
 assign bus_word_addr = { bus_addr[31:2], 2'h0 };
 logic bus_error;

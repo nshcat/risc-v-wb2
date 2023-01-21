@@ -3,7 +3,7 @@ timeunit 1ns;
 timeprecision 100ps;
 
 logic clk, reset;
-logic led;
+logic [3:0] leds;
 
 parameter PERIOD = 10;
 
@@ -19,7 +19,7 @@ always #PERIOD clk=~clk;
 soc dut(
     .clk_in(clk),
     .reset_in(reset),
-    .led_out(led)
+    .leds_out(leds)
 );
 
 endmodule
