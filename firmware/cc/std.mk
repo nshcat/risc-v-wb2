@@ -19,11 +19,11 @@ else
 endif
 
 ifeq ($(ABI),rv32e)
-    ARCH_FLAGS = -march=rv32e
+    ARCH_FLAGS = -march=rv32e_zicsr
     ABI_FLAGS = -mabi=ilp32e
     DEFINES += -DRV32E
 else
-    ARCH_FLAGS = -march=rv32i
+    ARCH_FLAGS = -march=rv32i_zicsr
     ABI_FLAGS = -mabi=ilp32
 endif
 

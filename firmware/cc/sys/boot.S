@@ -211,8 +211,10 @@ _start:
 
 .zero_end:
     # Enable external interrupt source in MIE CSR (bit 11)
-    li t0, 0x800
-    csrw CSR_MIE, t0
+    # XXX This CSR is currently not implemented, external interrupts are always active (but
+    # still gated by MSTATUS[3])
+    #li t0, 0x800
+    #csrw CSR_MIE, t0
 
     # Enable interrupts in MSTATUS CSR (bit 3)
     li t0, 0x8

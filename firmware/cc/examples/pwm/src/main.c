@@ -13,7 +13,7 @@ void handle_tim1()
 {
 	LED_STATE = ~LED_STATE;
 	
-	TIMER1_CMPV1 = animation[counter];
+	timer2->cmpv1 = animation[counter];
 	
 	++counter;
 	
@@ -29,15 +29,15 @@ int main()
 	counter = 0;
 	
 	// Setup timer 1. It will be used to change brightness every 200 ms.
-	TIMER1_PRETH = 24999;		                    	// Prescaler: 25MHz / 25000 => 1 KHz
-	TIMER1_CNTTH = 199;			                    	// Counter: 1KHz / 200 = 5 Hz
-	TIMER1_CONTROL = TIMER_ENABLE | TIMER_ENABLE_IRQ;	// Enable timer 1 and its interrupts
-	
+	timer1->preth = 24999;		                    	// Prescaler: 25MHz / 25000 => 1 KHz
+	timer1->cntth = 199;			                    // Counter: 1KHz / 200 = 5 Hz
+	timer1->control = TIMER_ENABLE | TIMER_ENABLE_IRQ;	// Enable timer 1 and its interrupts
+
 	// Setup timer 2. It will be used to implement PWM.
-	TIMER2_PRETH = 249;			                    	// Prescaler: 25MHz / 250 = 100 KHz
-	TIMER2_CNTTH = 255;			                    	// 256 steps of PWM resolution
-	TIMER2_CMPV1 = 0;		                        	// 0% initial brightness
-	TIMER2_CONTROL = TIMER_ENABLE | TIMER_ENABLE_CMP1;	// Enable timer 2 and its first comparator output
+	timer2->preth = 249;			                    // Prescaler: 25MHz / 250 = 100 KHz
+	timer2->cntth = 255;			                    // 256 steps of PWM resolution
+	timer2->cmpv1 = 0;		                        	// 0% initial brightness
+	timer2->control = TIMER_ENABLE | TIMER_ENABLE_CMP1;	// Enable timer 2 and its first comparator output
 	
 	// Enable interrupt handling for timer interrupt 1
 	EIC_MASK = 0b1;

@@ -1,7 +1,10 @@
 // SoC specific definitions
 #pragma once
-
+#include "util.h"
 #include "rv32.h"
+
+// ===== Helpers =====
+#define __NOPACK 
 
 // ===== I/O Register Definitions =====
 #define IO_REG(_addr) *((volatile uint32_t*)(_addr))
@@ -57,3 +60,19 @@
 #define TIMER2_CMPV1            IO_REG_OFFSET(TIMER2_BASE, TIMER_OFFS_CMPV1)
 #define TIMER2_CMPV2            IO_REG_OFFSET(TIMER2_BASE, TIMER_OFFS_CMPV2)
 #define TIMER2_CMPV3            IO_REG_OFFSET(TIMER2_BASE, TIMER_OFFS_CMPV3)
+
+
+// ===== C Struct Interface =====
+struct timer_t
+{
+    uint32_t control;
+    uint32_t preth;
+    uint32_t cntth;
+    uint32_t cmpv1;
+    uint32_t cmpv2;
+    uint32_t cmpv3;
+};
+
+
+static volatile struct timer_t* const timer1 = (volatile struct timer_t*)TIMER1_BASE;
+static volatile struct timer_t* const timer2 = (volatile struct timer_t*)TIMER2_BASE;

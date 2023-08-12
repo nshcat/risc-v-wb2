@@ -30,7 +30,7 @@ endfunction
 // Error logic. We dont support writes or misaligned reads
 wire err = (wb_we || wb_addr[1:0] != 2'h0);
 
-// 12 kb of program flash
+// 12 kibibyte of program flash
 (* ram_style = "block" *)
 reg [31:0] memory [0:3071];
 

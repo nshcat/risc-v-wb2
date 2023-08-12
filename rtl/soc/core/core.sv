@@ -4,6 +4,8 @@ module core(
     input logic clk_in,
     input logic reset_in,
 
+    input logic irq_in,
+
     // === WB primary interface ===
     output logic wb_we,
     output logic wb_stb,
@@ -155,6 +157,28 @@ function funct7_t castToFunct7(logic [6:0] value);
         default: castToFunct7 = FUNCT7_DEFAULT;
     endcase
 endfunction
+
+// ==== CSR definitions ====
+
+// == Allocated CSR addresses
+localparam CSR_CYCLE = 12'hC00;
+localparam CSR_CYCLEH = 12'hC80;
+localparam CSR_TIME = 12'hC01;
+localparam CSR_TIMEH = 12'hC81;
+localparam CSR_MSTATUS = 12'h300;
+localparam CSR_MIE = 12'h304;
+localparam CSR_MTVEC = 12'h305;
+localparam CSR_MSCRATCH = 12'h340;
+localparam CSR_MEPC = 12'h341;
+localparam CSR_MCAUSE = 12'h342;
+localparam CSR_MTVAL = 12'h343;
+localparam CSR_MIP = 12'h344;
+
+// == CSR bit names
+localparam CSR_MSTATUS_MIE_BIT = 3;
+localparam CSR_MSTATUS_MPIE_BIT = 7;
+localparam CSR_MIP_MEIP_BIT = 11;
+localparam CSR_MIE_MEIE_BIT = 11;
 
 // ==== Forward declarations ====
 cpu_state_t cpu_state;
@@ -341,6 +365,203 @@ always_comb begin
     endcase
 end
 
+
+// ==== CSR registers ====
+
+// Exception/Interrupt Handling
+logic [31:0] csr_mepc;      //< Address of next instruction to execute after interrupt has been handled, or offending instruction in case of exception
+logic [31:0] csr_mtvec;     //< Address of trap handling function. We only support direct mode, which means that this is not used as the base
+                            //  address of a vector, despite the name.
+logic [31:0] csr_mcause;    //< Cause of trap. Includes exception/interrupt bit.
+logic [31:0] csr_mtval;     //< Extended trap details
+logic csr_mstatus;          //< M level interrupt enable bit, this is bit 3 in the MSTATUS register.
+
+logic [31:0] csr_mscratch;  //< Scratch space register, used for context saving on IRQ enter
+
+// Timers
+logic [63:0] csr_cycles;    //< Total CPU cycle count since bootup
+logic [63:0] csr_time;      //< Milliseconds elapsed since bootup
+
+
+// ==== IRQ state registers ====
+// Register values here are set before going into DO_TRAP state.
+// This either happens at the end of an instruction (external interrupt)
+// or after any state (exception)
+
+// Types of exceptions that can be generated
+typedef enum logic[2:0]
+{ 
+    EXC_INSTR_ADDR_MISALIGN     = 3'h0,
+    EXC_INSTR_LOAD_FAULT        = 3'h1,
+    EXC_ILLEGAL_INSTR           = 3'h2,
+    EXC_BREAKPOINT              = 3'h3,
+    EXC_LOAD_ADDR_MISALIGN      = 3'h4,
+    EXC_LOAD_FAULT              = 3'h5,
+    EXC_STORE_ADDR_MISALIGN     = 3'h6,
+    EXC_STORE_FAULT             = 3'h7
+} exception_cause_t;
+
+// Whether the trap to perform is an external interrupt, or an exception
+logic is_interrupt;
+
+// Cause of exception
+exception_cause_t exc_cause;
+
+// Detailed exception information, such as illegal instruction, or misaligned address etc
+logic [31:0] exc_details;
+
+// == Interrupt request handling
+
+// Whether we currently are handling an interrupt
+logic in_interrupt;
+
+// We need to sample the interrupt line on each clock cycle and keep it up until the
+// interrupt is handled
+logic irq_sticky;
+
+wire interrupt = irq_sticky & csr_mstatus & ~in_interrupt;
+
+// We accept interrupts after execute state for non load and non stores. For stores and loads
+// we must wait until the bus operation has finished.
+wire irq_accepted = interrupt & (
+    ((is_load | is_store) & `IN_STATE(CPU_STATE_WAIT_MEM) & ~bus_busy) |
+    (~(is_load | is_store) & `IN_STATE(CPU_STATE_EXECUTE))
+);
+
+// If current interrupt is accepted, there already might be the next one, 
+// which should not be missed.
+always_ff @(posedge clk_in) begin
+    if (~reset_in) begin
+        irq_sticky <= 1'h0;
+    end 
+    else begin
+        irq_sticky <= irq_in | (irq_sticky & ~irq_accepted);
+    end
+end
+
+// ==== CSR Handling ====
+
+// == CSR selection logic
+wire csr_sel_mepc = (instr_csr_addr == CSR_MEPC);
+wire csr_sel_mtvec = (instr_csr_addr == CSR_MTVEC);
+wire csr_sel_mstatus = (instr_csr_addr == CSR_MSTATUS);
+wire csr_sel_cycleh = (instr_csr_addr == CSR_CYCLEH);
+wire csr_sel_cycle = (instr_csr_addr == CSR_CYCLE);
+wire csr_sel_mcause = (instr_csr_addr == CSR_MCAUSE);
+wire csr_sel_mscratch = (instr_csr_addr == CSR_MSCRATCH);
+wire csr_sel_mtval = (instr_csr_addr == CSR_MTVAL);
+wire csr_sel_timeh = (instr_csr_addr == CSR_TIMEH);
+wire csr_sel_time = (instr_csr_addr == CSR_TIME);
+
+// == CSR combinational read and writeback logic
+logic [31:0] csr_read_value;
+
+always_comb begin
+    csr_read_value = 32'h0;
+
+    case (1'b1)
+        (csr_sel_mepc): begin
+            csr_read_value = csr_mepc;
+        end
+        (csr_sel_mtvec): begin
+            csr_read_value = csr_mtvec;
+        end
+        (csr_sel_mstatus): begin
+            csr_read_value = { 28'h0, csr_mstatus, 3'h0 };
+        end
+        (csr_sel_cycle): begin
+            csr_read_value = csr_cycles[31:0];
+        end
+        (csr_sel_cycleh): begin
+            csr_read_value = csr_cycles[63:32];
+        end
+        (csr_sel_mcause): begin
+            csr_read_value = csr_mcause;
+        end
+        (csr_sel_mscratch): begin
+            csr_read_value = csr_mscratch;
+        end
+        (csr_sel_mtval): begin
+            csr_read_value = csr_mtval;
+        end
+        (csr_sel_time): begin
+            csr_read_value = csr_time[31:0];
+        end
+        (csr_sel_timeh): begin
+            csr_read_value = csr_time[63:32];
+        end
+        /* XXX finish */
+        default: begin
+            csr_read_value = 32'h0;
+        end
+    endcase
+end
+
+wire [31:0] csr_modifier = (instr_csr_use_imm == 1'b1) ? { 27'h0, imm_CSR } : rs1_data;
+
+wire [31:0] csr_write_value = (instr_func3_csr == FUNCT3_CSR_READ_SET) ? csr_read_value | csr_modifier :
+                              (instr_func3_csr == FUNCT3_CSR_READ_CLEAR) ? csr_read_value & ~csr_modifier :
+                              /* FUNCT3_CSR_READ_WRITE */ csr_modifier;
+
+wire do_csr_writeback = is_csr & `IN_STATE(CPU_STATE_EXECUTE)
+    // Dont do CSR write if bit SET/CLEAR operation is used, and the argument is zero
+    & ~((instr_func3_csr == FUNCT3_CSR_READ_CLEAR || instr_func3_csr == FUNCT3_CSR_READ_SET) & ~instr_csr_use_imm & (instr_rs1 == 5'h0))
+    & ~((instr_func3_csr == FUNCT3_CSR_READ_CLEAR || instr_func3_csr == FUNCT3_CSR_READ_SET) & instr_csr_use_imm & (imm_CSR == 32'h0));                             
+
+// == CSR synchronous write logic
+// Note that mcause and mepc are managed by the
+// main state machine synchronous block, not here.
+always_ff @(posedge clk_in) begin
+    if (~reset_in) begin
+        csr_cycles <= 64'h0;
+        csr_mtvec <= 32'h0;
+        csr_mstatus <= 1'h0;
+    end
+    else begin
+        // Cycle counter is only incremented in FETCH state, to make sure we only increment it once
+        // per cycle
+        if (`IN_STATE(CPU_STATE_FETCH)) begin
+            csr_cycles <= csr_cycles + 64'h1;
+        end
+
+        // Perform CSR write for CSRs that support it
+        if (do_csr_writeback) begin
+            if (csr_sel_mstatus) csr_mstatus <= csr_write_value[3];
+            if (csr_sel_mtvec) csr_mtvec <= csr_write_value;
+            if (csr_sel_mscratch) csr_mscratch <= csr_write_value;
+        end
+    end
+end
+
+// Logic for millisecond RDTIME counter
+`ifdef VERILATOR
+localparam  CSR_TIME_THRES = 16'd1;
+`elsif VIVADO_SIM
+localparam  CSR_TIME_THRES = 16'd1;
+`else
+localparam CSR_TIME_THRES = 16'd24999;   // 25 MHz / 25000 = 1 KHz
+`endif
+
+logic [15:0] time_counter;
+always_ff @(posedge clk_in) begin
+    if (~reset_in) begin
+        time_counter <= 16'h0;
+        csr_time <= 64'h0;
+    end
+    else begin
+        if (time_counter == CSR_TIME_THRES) begin
+            time_counter <= 16'h0;
+
+            // A millisecond has passed - increment timer CSR
+            csr_time <= csr_time + 64'h1;
+        end
+        else begin
+            time_counter <= time_counter + 16'h1;
+        end
+    end
+end
+
+
 // ==== Writeback value ====
 always_comb begin
     writeback_value = 32'h0;
@@ -362,7 +583,7 @@ always_comb begin
             writeback_value = load_result;
         end
         (is_csr): begin
-            writeback_value = 32'h0;//csrs[instr_csr_addr];
+            writeback_value = csr_read_value;
         end
         default: begin
             writeback_value = 32'h0;
@@ -404,9 +625,9 @@ always_comb begin
                 pc_next = pc + imm_B;
             end
         end
-        /*(is_iret): begin
-            pc_next = csrs[CSR_MEPC];
-        end*/
+        (is_iret): begin
+            pc_next = csr_mepc;
+        end
         default: begin
             pc_next = pc + 32'h4;
         end
@@ -598,45 +819,140 @@ always_ff @(posedge clk_in) begin
         pc <= 32'h0;
         cpu_state <= CPU_STATE_FETCH;
 
+        // = Instruction and register reads
         // TODO: Remove unneeded resets to save logic!
         instruction <= 32'h0;
         rs1_data <= 32'h0;
         rs2_data <= 32'h0;
+
+        // = CSRs written to by this synchronous block
+        csr_mepc <= 32'h0;
+        csr_mcause <= 32'h0;
+        csr_mtval <= 32'h0;
+
+        // = IRQ/Exception helper registers
+        is_interrupt <= 1'h0;
+        exc_cause <= EXC_INSTR_ADDR_MISALIGN; // This is just a default value, it will be overridden anways
+        exc_details <= 32'h0;
+        in_interrupt <= 1'h0;
     end
     else begin
         case (cpu_state)        
             CPU_STATE_WAIT_FETCH: begin
+                // Check for bus errors while fetching
+                if (bus_error) begin
+                    is_interrupt <= 1'b0;
+                    exc_cause <= EXC_INSTR_LOAD_FAULT;
+                    exc_details <= pc;
+                    cpu_state <= CPU_STATE_DO_TRAP;
+                end
                 // Wait for bus to report completed transaction
-                if (~bus_busy) begin
-                    instruction <= bus_rdata;
-                    rs1_data <= registers[bus_rdata[19:15]];
-                    rs2_data <= registers[bus_rdata[24:20]];
-                    cpu_state <= CPU_STATE_EXECUTE;
+                else if (~bus_busy) begin
+                    // Check if the instruction is valid. If not, generate an invalid instruction exception.
+                    if (castToOpcode(bus_rdata[6:0]) == OPCODE_INVALID) begin
+                        is_interrupt <= 1'b0;
+                        exc_cause <= EXC_ILLEGAL_INSTR;
+                        exc_details <= bus_rdata;
+                        cpu_state <= CPU_STATE_DO_TRAP;
+                    end
+                    else begin
+                        instruction <= bus_rdata;
+                        rs1_data <= registers[bus_rdata[19:15]];
+                        rs2_data <= registers[bus_rdata[24:20]];
+                        cpu_state <= CPU_STATE_EXECUTE;
+                    end
                 end
             end
             CPU_STATE_EXECUTE: begin
                 // Handling of load and stores
                 // For load/stores, transition from EXECUTE -> WAIT_MEM will initiate a WB bus transaction
                 if (is_load | is_store) begin
-                    cpu_state <= CPU_STATE_WAIT_MEM;
+                    // If the requested address failed alignment check, generate exception
+                    if (bus_align_error) begin
+                        is_interrupt <= 1'b0;
+                        exc_cause <= is_load ? EXC_LOAD_ADDR_MISALIGN : EXC_STORE_ADDR_MISALIGN;
+                        exc_details <= bus_addr;
+                        cpu_state <= CPU_STATE_DO_TRAP;
+                    end
+                    else begin
+                        cpu_state <= CPU_STATE_WAIT_MEM;
+                    end
                 end
                 else begin
-                    cpu_state <= CPU_STATE_FETCH;
-                    pc <= pc_next;
+                    // Accept regular IRQ if requested
+                    if (irq_accepted) begin
+                        is_interrupt <= 1'b1;
+                        exc_details <= 32'h0;
+                        cpu_state <= CPU_STATE_DO_TRAP;
+                    end
+                    else begin
+                        cpu_state <= CPU_STATE_FETCH;
+                        pc <= pc_next;
+                    end
+                end
+
+                // Keep note when returning from an interrupt to allow sampling IRQ line
+                // again
+                if (is_iret) begin
+                    in_interrupt <= 1'b0;
                 end
             end
             CPU_STATE_WAIT_MEM: begin
-                // Wait for bus operation to complete
-                if (~bus_busy) begin
-                    cpu_state <= CPU_STATE_FETCH;
-                    pc <= pc_next;
+                // Wait for memory operation completion, watching out for any errors
+                if (bus_error) begin
+                    // Bus signaled error during load/store operation. Generate exception.
+                    is_interrupt <= 1'b0;
+                    exc_cause <= is_load ? EXC_LOAD_FAULT : EXC_STORE_FAULT;
+                    exc_details <= bus_addr;
+                    cpu_state <= CPU_STATE_DO_TRAP;
                 end
+                // Wait for bus operation to complete
+                else if (~bus_busy) begin
+                    // Accept regular IRQ if requested
+                    if (irq_accepted) begin
+                        is_interrupt <= 1'b1;
+                        exc_details <= 32'h0;
+                        cpu_state <= CPU_STATE_DO_TRAP;
+                    end
+                    else begin          
+                        cpu_state <= CPU_STATE_FETCH;
+                        pc <= pc_next;
+                    end
+                end
+            end
+            CPU_STATE_DO_TRAP: begin
+                // Indicate that we are handling an IRQ
+                in_interrupt <= 1'b1;
+
+                // Note offending / next instruction (depending on whether its an exception or interrupt)
+                csr_mepc <= is_interrupt ? pc_next : pc;
+
+                // Store interrupt cause
+                csr_mcause <= { is_interrupt, (is_interrupt ? 31'd11 : 31'(exc_cause)) };
+
+                // Store exception details
+                csr_mtval <= exc_details;
+
+                // Jump to trap base addr retrieved from MTVEC. We only support direct mode.
+                // The MTVEC csr holds the upper 30 bits of the trap base address. Since
+                // it has to be aligned to a 4 byte boundary, those bits would be zero anyways.
+                pc <= { csr_mtvec[31:2], 2'h0 };
+                cpu_state <= CPU_STATE_FETCH;
             end
             // FETCH
             default: begin
-                // The next transition will initiate a read from mem[pc].
-                // We have to wait for it to finish in the next state.
-                cpu_state <= CPU_STATE_WAIT_FETCH;
+                // Check if the current PC is misaligned. If so, we generate an exception.
+                if (pc_align_error) begin
+                    is_interrupt <= 1'b0;
+                    exc_cause <= EXC_INSTR_ADDR_MISALIGN;
+                    exc_details <= pc;
+                    cpu_state <= CPU_STATE_DO_TRAP;
+                end
+                else begin
+                    // The next transition will initiate a read from mem[pc].
+                    // We have to wait for it to finish in the next state.
+                    cpu_state <= CPU_STATE_WAIT_FETCH;
+                end
             end
         endcase
     end

@@ -1,7 +1,7 @@
 #pragma once
+#include "util.h"
 #include "device.h"
 
-#define __force_inline inline __attribute__((always_inline))
 
 __force_inline
 uint32_t __rdtime()
